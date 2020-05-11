@@ -1,0 +1,553 @@
+---
+title: "Project2_DAT514"
+author: "Liam McFall, Erin Karnath, Cam Farrugia"
+date: "4/23/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(ISLR)
+library(MASS)
+library(class)
+library(randomForest)
+library(tidyverse)
+library(caret)
+library(pROC)
+library(mlbench)
+```
+
+Read in Data and initital data exploration
+
+```{r}
+
+project<- read.csv("classif1.txt", header = FALSE)
+
+# Data Exploration
+
+project$V5 <- factor(project$V5)
+str(project)
+summary(project)
+
+attach(project)
+library(tidyverse)
+
+ggplot(data = project, aes(x = V5)) +
+  geom_boxplot(aes(y = V1))
+
+ggplot(data = project, aes(x = V5)) +
+  geom_boxplot(aes(y = V2))
+
+ggplot(data = project, aes(x = V5)) +
+  geom_boxplot(aes(y = V3))
+
+ggplot(data = project, aes(x = V5)) +
+  geom_boxplot(aes(y = V4))
+
+pairs(project)
+
+hist(V1)
+hist(V2)
+hist(V3)
+hist(V4)
+
+```
+
+Initial data sampling, splitting into a training and testing set using a 70/30 split.
+
+```{r}
+
+# Data sampling
+
+set.seed(7)
+train <- sample(nrow(project), nrow(project) * .7)
+project.train <- project[train,]
+project.test <- project[-train,]
+
+results <- data.frame(Model = character(), Test.Accuracy = numeric(), Train.Test.Split = character(), stringsAsFactors = FALSE)
+
+```
+
+Logit model
+
+```{r}
+
+log.fit <- glm(V5 ~ ., data = project.train, family = "binomial")
+summary(log.fit)
+preds <- predict(log.fit, type = 'response')
+
+project.train.log <- project.train %>% 
+  mutate(probs = preds) %>% 
+  mutate(pred = ifelse(probs > .5, 1, 0)) %>% 
+  mutate(same = ifelse(pred == V5, TRUE, FALSE))
+
+# Training Accuracy
+sum(project.train.log$same == TRUE)/nrow(project.train.log)
+
+# Test
+
+preds <- predict(log.fit, newdata = project.test, type = 'response')
+project.test.log <- project.test %>% 
+  mutate(probs = preds) %>% 
+  mutate(pred = ifelse(probs > .5, 1, 0)) %>% 
+  mutate(same = ifelse(pred == V5, TRUE, FALSE))
+
+# Test Accuracy
+results[1,] <- c('logit.test', sum(project.test.log$same == TRUE)/nrow(project.test.log), '70/30')
+
+# Test confusion Matrix
+table(true = project.test.log[,5], pred = project.test.log[,"pred"])
+
+```
+
+LDA
+
+```{r}
+
+set.seed(7)
+lda.fit <- lda(V5~., data = project.train)
+lda.fit
+
+preds <- predict(lda.fit, type = 'response')
+
+project.train.lda <- project.train %>% 
+  mutate(pred = preds$class) %>% 
+  mutate(same = ifelse(pred == V5, TRUE, FALSE))
+
+# Training accuracy
+
+sum(project.train.lda$same == TRUE)/nrow(project.train.lda)
+
+# Test
+
+preds <- predict(lda.fit, project.test, type = 'response')
+
+project.test.lda <- project.test %>% 
+  mutate(pred = preds$class) %>% 
+  mutate(same = ifelse(pred == V5, TRUE, FALSE))
+
+# Test accuracy
+
+results[2,] <- c('lda.test', sum(project.test.lda$same == TRUE)/nrow(project.test.lda), '70/30')
+
+# Test confusion Matrix
+table(true = project.test[,5], pred = preds$class)
+
+```
+
+QDA
+
+```{r}
+
+set.seed(7)
+qda.fit <- qda(V5~., data = project.train)
+qda.fit
+
+preds <- predict(qda.fit, type = 'response')
+
+project.train.qda <- project.train %>% 
+  mutate(pred = preds$class) %>% 
+  mutate(same = ifelse(pred == V5, TRUE, FALSE))
+
+# Training accuracy
+
+sum(project.train.qda$same == TRUE)/nrow(project.train.qda)
+
+# Test
+
+preds <- predict(qda.fit, project.test, type = 'response')
+
+project.test.qda <- project.test %>% 
+  mutate(pred = preds$class) %>% 
+  mutate(same = ifelse(pred == V5, TRUE, FALSE))
+
+# Test accuracy
+
+results[3,] <- c('qda.test', sum(project.test.qda$same == TRUE)/nrow(project.test.qda), '70/30')
+
+# Test confusion Matrix
+table(true = project.test[,5], pred = preds$class)
+
+```
+
+Bagging
+
+```{r}
+
+set.seed(7)
+bag.fit <- randomForest(V5 ~ ., data = project.train,
+                        mtry=4,importance =TRUE)
+
+bag.fit
+
+preds <- predict(bag.fit, project.train, type = 'response')
+
+project.train.bag <- project.train %>% 
+  mutate(pred = preds) %>% 
+  mutate(same = ifelse(pred == V5, TRUE, FALSE))
+
+# Training accuracy
+
+sum(project.train.bag$same == TRUE)/nrow(project.train.bag)
+
+# Test
+
+preds <- predict(bag.fit, project.test, type = 'response')
+
+project.test.bag <- project.test %>% 
+  mutate(pred = preds) %>% 
+  mutate(same = ifelse(pred == V5, TRUE, FALSE))
+
+# Test accuracy
+
+results[4,] <- c('bag.test', sum(project.test.bag$same == TRUE)/nrow(project.test.bag), '70/30')
+
+# Test confusion Matrix
+table(true = project.test[,5], preds)
+
+```
+
+Random Forest
+
+```{r}
+
+set.seed(7)
+
+rf.fit <- randomForest(V5 ~ ., data = project.train,
+                        importance =TRUE)
+
+rf.fit
+
+preds <- predict(rf.fit, project.train, type = 'response')
+
+project.train.rf <- project.train %>% 
+  mutate(pred = preds) %>% 
+  mutate(same = ifelse(pred == V5, TRUE, FALSE))
+
+# Training accuracy
+
+sum(project.train.rf$same == TRUE)/nrow(project.train.rf)
+
+# Test
+
+preds <- predict(rf.fit, project.test, type = 'response')
+
+project.test.rf <- project.test %>% 
+  mutate(pred = preds) %>% 
+  mutate(same = ifelse(pred == V5, TRUE, FALSE))
+
+# Test accuracy
+
+results[5,] <- c('rf.test', sum(project.test.rf$same == TRUE)/nrow(project.test.rf), '70/30')
+
+# Test confusion Matrix
+table(true = project.test[,5], preds)
+
+```
+
+KNN
+
+```{r}
+
+set.seed(7)
+trControl <- trainControl(method="repeatedcv",
+                         number=10,
+                         repeats=3)
+
+knn.fit <- train(V5 ~.,
+           data=project.train,
+           method ="knn",
+           tuneLength=20,
+           trControl=trControl,
+           preProc = c("center","scale"))
+
+knn.fit
+plot(knn.fit)
+varImp(knn.fit)
+
+preds <- predict(knn.fit, project.train, type = 'raw')
+
+project.train.knn <- project.train %>% 
+  mutate(pred = preds) %>% 
+  mutate(same = ifelse(pred == V5, TRUE, FALSE))
+
+# Training accuracy
+
+sum(project.train.knn$same == TRUE)/nrow(project.train.knn)
+
+# Test
+
+preds <- predict(knn.fit, project.test, type = 'raw')
+
+project.test.knn <- project.test %>% 
+  mutate(pred = preds) %>% 
+  mutate(same = ifelse(pred == V5, TRUE, FALSE))
+
+# Test accuracy
+
+results[6,] <- c('knn.test', sum(project.test.knn$same == TRUE)/nrow(project.test.knn), '70/30')
+
+# Test confusion Matrix
+table(true = project.test[,5], preds)
+
+```
+
+
+Model Evaluation
+
+```{r}
+
+results_ordered <- results[order(results$Test.Accuracy, decreasing = TRUE),]
+print(results_ordered)
+
+```
+
+In this run of the models all of the models perform extremely well against the test data. The best performing model is a KNN with 9 neighbors being used, obtained using cross validation. the KNN model has 99.7% accuracy on predicting the test data. The best performing models besides KNN are QDA and a Random Forest using all available predictors with no manipulation of the variables. Both models have a Test Accuracy of 99.5%. We decided to run the mdoels again with a more even split between training and testing data to ensure that the models are not being overfit.
+
+Initial data sampling, splitting into a training and testing set using a 50/50 split.
+
+```{r}
+
+# Data sampling
+
+set.seed(7)
+train <- sample(nrow(project), nrow(project) / 2)
+project.train <- project[train,]
+project.test <- project[-train,]
+
+```
+
+Logit model
+
+```{r}
+
+log.fit <- glm(V5 ~ ., data = project.train, family = "binomial")
+summary(log.fit)
+preds <- predict(log.fit, type = 'response')
+
+project.train.log <- project.train %>% 
+  mutate(probs = preds) %>% 
+  mutate(pred = ifelse(probs > .5, 1, 0)) %>% 
+  mutate(same = ifelse(pred == V5, TRUE, FALSE))
+
+# Training Accuracy
+sum(project.train.log$same == TRUE)/nrow(project.train.log)
+
+# Test
+
+preds <- predict(log.fit, newdata = project.test, type = 'response')
+project.test.log <- project.test %>% 
+  mutate(probs = preds) %>% 
+  mutate(pred = ifelse(probs > .5, 1, 0)) %>% 
+  mutate(same = ifelse(pred == V5, TRUE, FALSE))
+
+# Test Accuracy
+results[7,] <- c('logit.test', sum(project.test.log$same == TRUE)/nrow(project.test.log), '50/50')
+
+# Test confusion Matrix
+table(true = project.test.log[,5], pred = project.test.log[,"pred"])
+
+```
+
+LDA
+
+```{r}
+
+set.seed(7)
+lda.fit <- lda(V5~., data = project.train)
+lda.fit
+
+preds <- predict(lda.fit, type = 'response')
+
+project.train.lda <- project.train %>% 
+  mutate(pred = preds$class) %>% 
+  mutate(same = ifelse(pred == V5, TRUE, FALSE))
+
+# Training accuracy
+
+sum(project.train.lda$same == TRUE)/nrow(project.train.lda)
+
+# Test
+
+preds <- predict(lda.fit, project.test, type = 'response')
+
+project.test.lda <- project.test %>% 
+  mutate(pred = preds$class) %>% 
+  mutate(same = ifelse(pred == V5, TRUE, FALSE))
+
+# Test accuracy
+
+results[8,] <- c('lda.test', sum(project.test.lda$same == TRUE)/nrow(project.test.lda), '50/50')
+
+# Test confusion Matrix
+table(true = project.test[,5], pred = preds$class)
+
+```
+
+QDA
+
+```{r}
+
+set.seed(7)
+qda.fit <- qda(V5~., data = project.train)
+qda.fit
+
+preds <- predict(qda.fit, type = 'response')
+
+project.train.qda <- project.train %>% 
+  mutate(pred = preds$class) %>% 
+  mutate(same = ifelse(pred == V5, TRUE, FALSE))
+
+# Training accuracy
+
+sum(project.train.qda$same == TRUE)/nrow(project.train.qda)
+
+# Test
+
+preds <- predict(qda.fit, project.test, type = 'response')
+
+project.test.qda <- project.test %>% 
+  mutate(pred = preds$class) %>% 
+  mutate(same = ifelse(pred == V5, TRUE, FALSE))
+
+# Test accuracy
+
+results[9,] <- c('qda.test', sum(project.test.qda$same == TRUE)/nrow(project.test.qda), '50/50')
+
+# Test confusion Matrix
+table(true = project.test[,5], pred = preds$class)
+
+```
+
+Bagging
+
+```{r}
+
+set.seed(7)
+bag.fit <- randomForest(V5 ~ ., data = project.train,
+                        mtry=4,importance =TRUE)
+
+bag.fit
+
+preds <- predict(bag.fit, project.train, type = 'response')
+
+project.train.bag <- project.train %>% 
+  mutate(pred = preds) %>% 
+  mutate(same = ifelse(pred == V5, TRUE, FALSE))
+
+# Training accuracy
+
+sum(project.train.bag$same == TRUE)/nrow(project.train.bag)
+
+# Test
+
+preds <- predict(bag.fit, project.test, type = 'response')
+
+project.test.bag <- project.test %>% 
+  mutate(pred = preds) %>% 
+  mutate(same = ifelse(pred == V5, TRUE, FALSE))
+
+# Test accuracy
+
+results[10,] <- c('bag.test', sum(project.test.bag$same == TRUE)/nrow(project.test.bag), '50/50')
+
+# Test confusion Matrix
+table(true = project.test[,5], preds)
+
+```
+
+Random Forest
+
+```{r}
+
+set.seed(7)
+
+rf.fit <- randomForest(V5 ~ ., data = project.train,
+                        importance =TRUE)
+
+rf.fit
+
+preds <- predict(rf.fit, project.train, type = 'response')
+
+project.train.rf <- project.train %>% 
+  mutate(pred = preds) %>% 
+  mutate(same = ifelse(pred == V5, TRUE, FALSE))
+
+# Training accuracy
+
+sum(project.train.rf$same == TRUE)/nrow(project.train.rf)
+
+# Test
+
+preds <- predict(rf.fit, project.test, type = 'response')
+
+project.test.rf <- project.test %>% 
+  mutate(pred = preds) %>% 
+  mutate(same = ifelse(pred == V5, TRUE, FALSE))
+
+# Test accuracy
+
+results[11,] <- c('rf.test', sum(project.test.rf$same == TRUE)/nrow(project.test.rf), '50/50')
+
+# Test confusion Matrix
+table(true = project.test[,5], preds)
+
+```
+
+KNN
+
+```{r}
+
+set.seed(7)
+trControl <- trainControl(method="repeatedcv",
+                         number=10,
+                         repeats=3)
+
+knn.fit <- train(V5 ~.,
+           data=project.train,
+           method ="knn",
+           tuneLength=20,
+           trControl=trControl,
+           preProc = c("center","scale"))
+
+knn.fit
+plot(knn.fit)
+varImp(knn.fit)
+
+preds <- predict(knn.fit, project.train, type = 'raw')
+
+project.train.knn <- project.train %>% 
+  mutate(pred = preds) %>% 
+  mutate(same = ifelse(pred == V5, TRUE, FALSE))
+
+# Training accuracy
+
+sum(project.train.knn$same == TRUE)/nrow(project.train.knn)
+
+# Test
+
+preds <- predict(knn.fit, project.test, type = 'raw')
+
+project.test.knn <- project.test %>% 
+  mutate(pred = preds) %>% 
+  mutate(same = ifelse(pred == V5, TRUE, FALSE))
+
+# Test accuracy
+
+results[12,] <- c('knn.test', sum(project.test.knn$same == TRUE)/nrow(project.test.knn), '50/50')
+
+# Test confusion Matrix
+table(true = project.test[,5], preds)
+
+```
+
+Model Evaluation
+
+```{r}
+
+results_ordered <- results[order(results$Test.Accuracy, decreasing = TRUE),]
+print(results_ordered)
+
+```
+
+After running the model with a different split ratio of the training and test sets, we have decided that the KNN with k = 5 obtained via cross validation, is the best model to predict this data set. Overall, most of the data sets in this model did a decent job of classifying correctly. The lowest Test Accuracy rates besides KNN were the bagged model and the LDA on the 50/50 split between testing and training data, both at 97.5% and 97.9% respectively. KNN performed the best on both of our different splits, with Test Accuracy scores of 99.7% on the 70/30 split, and 99.8% on the test data for the 50/50 split. According the the confusion matrix, in both of these cases, the KNN model predicted only a single observation of the test data incorrectly.
